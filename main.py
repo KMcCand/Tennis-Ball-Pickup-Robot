@@ -17,11 +17,17 @@ greenLower = (29, 86, 6)
 greenUpper = (64, 255, 255) 
 
 # number of frames to grab at beginning
-number_of_frames = 50
+SAVE_FRAME_LIMIT = 100000
 # program saves  one frame in every frame_divider frames, ie the larger frame divider is the more time between frames
-frame_divider = 10
+FRAMES_BETWEEN_SNAPSHOTS = 10000
 
-#A is bot left motor controller pins, B is bot right motor controller pins. Pins are numbered 1 through 4 increasing left to right.
+# limiting the bot fps to keep pi from overheating
+RATE_LIMIT_FPS = 10
+
+# time in seconds between when the ball goes off the near end of the camera to when it gets scooped up
+BALL_SCOOP_TIME_SECS = 3
+
+# A is bot left motor controller pins, B is bot right motor controller pins. Pins are numbered 1 through 4 increasing left to right.
 A1 = 35
 A2 = 37
 B1 = 24
@@ -118,32 +124,49 @@ def check_for_ball(cnts, radius):
 def run_video_loop(vs):
     ball_in_view = False
     ball_is_close = False
+    force_bot_forward_secs = None
+    
     radius = 0
-    count = 0
+    frame_count = 0
 
     # number of frames in the last second
     fps_count = 0
-    old_time = int_time()
+    old_time_int = int_time()
+
+    last_frame_time = time.time()
     
     # keep looping
     while True:
-        count += 1
+        current_time = time.time()
+
+        # rate limit for fps
+        sleep_time_secs = 1 / RATE_LIMIT_FPS - (current_time - last_frame_time)
+        if sleep_time_secs > 0:
+            time.sleep(sleep_time_secs)
+            last_frame_time = time.time()
+        
+        frame_count += 1
         fps_count += 1
 
-        current_time = int_time()
-        
-        if current_time != old_time:
+        current_int_time = int_time()
+
+        # counting fps
+        if current_int_time != old_time_int:
             print(f"fps is: {fps_count}")
+            old_time_int = current_int_time    
             fps_count = 0
-            
-        old_time = current_time    
+    
+        if force_bot_forward_secs is not None:
+            # a ball must have disappeared off the near end of the camera within the last BALL_SCOOP_TIME_SECS
+            if time.time() > force_bot_forward_secs:
+                force_bot_forward_secs = None        
         
 	# grab the current frame
         frame = vs.read()
 
         # save the first 5 frames as .jpg
-        if count < number_of_frames and count % frame_divider == 0:
-            cv2.imwrite("Frame%d.jpg" % count, frame)
+        if frame_count < SAVE_FRAME_LIMIT and frame_count % FRAMES_BETWEEN_SNAPSHOTS == 0:
+            cv2.imwrite("Frame%d.jpg" % frame_count, frame)
         
         # resize the frame, blur it, and convert it to the HSV
         # color space
@@ -194,19 +217,21 @@ def run_video_loop(vs):
                 cv2.circle(frame, center, 5, (0, 0, 255), -1)
 
                 
-        elif ball_in_view == True and ball_is_close == True:
+        elif ball_in_view and ball_is_close:
             ball_in_view = False
             ball_is_close = False
+            
             bot_forward()
-            time.sleep(10)
+            belt_intake()
+            force_bot_forward_secs = time.time() + BALL_SCOOP_TIME_SECS
                     
-        else:
+        elif force_bot_forward_secs is None:
             ball_in_view = False
             belt_stop()
             left_circle()
 
         # show the frame to our screen
-        cv2.imshow("Frame", frame)
+        # cv2.imshow("Frame", frame)
         key = cv2.waitKey(1) & 0xFF
 
 
