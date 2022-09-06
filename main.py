@@ -1,5 +1,3 @@
-# September 2020 Kyle, Joel, Dad working on tennis bot. Program goal for now is to show off the basic functions like moving forawrd and turning.
-
 from collections import deque
 from imutils.video import VideoStream
 import numpy as np
